@@ -10,6 +10,21 @@
  * Most solutions still require some boilerplate by defining deterministic actions and using replaying to reconstruct state.
  *
  * I believe that the solution demonstrated in this file is very small, efficient and allows for easy embedding in .NET applications.
+ *
+ * The output of this program should look like this:
+ * > Before Main invoke
+ * > Before Main1337 invoke
+ * > Before WaitForOneDay invoke
+ * > After Main invoke
+ * > Persisted stack to {}\bin\Debug\net8.0\tasks
+ * > Pretending 1 day has passed. Reconstructing stack from memory.
+ * > After WaitForOneDay invoke. State: 1337
+ * > After Main1337 invoke. State: 1
+ *
+ * The output of a second invocation will be prefixed by this:
+ * > Pretending 1 day has passed. Reconstructing stack from {}\bin\Debug\net8.0\tasks.
+ * > After WaitForOneDay invoke. State: 1337
+ * > After Main1337 invoke. State: 1
  */
 
 using System.Runtime.CompilerServices;
@@ -20,6 +35,7 @@ using MessagePack.Resolvers;
 var tasksdir = new DirectoryInfo("tasks");
 tasksdir.Create(); // if not exists
 
+Console.WriteLine($"Pretending 1 day has passed. Reconstructing stack from {tasksdir.FullName}.");
 // Reconstruct the tasks that were persisted in a previous execution
 var durable = Reconstruct(tasksdir.EnumerateFiles().Select(f => File.ReadAllBytes(f.FullName)));
 // Pretend that our Durable dependency WaitForOneDay finished.
@@ -30,19 +46,27 @@ DurableTask WaitForOneDay() => new(canComplete: false);
 async DurableTask Main1337()
 {
     int[] state = [1, 3, 3, 7];
+    Console.WriteLine("Before WaitForOneDay invoke");
     await WaitForOneDay();
-    Console.WriteLine(string.Join("", state));
+    Console.WriteLine($"After WaitForOneDay invoke. State: {string.Join("", state)}");
 }
 
 async DurableTask Main()
 {
     int[] state = [1];
+    Console.WriteLine("Before Main1337 invoke");
     await Main1337();
-    Console.WriteLine(string.Join("", state));
+    Console.WriteLine($"After Main1337 invoke. State: {string.Join("", state)}");
 }
+
+Console.WriteLine();
+
+Console.WriteLine("Before Main invoke");
 
 // Execute main without await. This will popuplate the DurableStack
 Main();
+
+Console.WriteLine("After Main invoke");
 
 // persist our stack to prove we are durable. We execute this in a next invocation.
 for (var i = 0; i < DurableStack.States.Count; i++)
@@ -50,7 +74,10 @@ for (var i = 0; i < DurableStack.States.Count; i++)
     File.WriteAllBytes($"tasks/{i}.sm", DurableStack.States[i]);
 }
 
+Console.WriteLine($"Persisted stack to {tasksdir.FullName}");
+
 // Run our stack immediately as if fully completed. This will also print our output
+Console.WriteLine("Pretending 1 day has passed. Reconstructing stack from memory.");
 Reconstruct(DurableStack.States).SetResult();
 
 DurableAwaiter Reconstruct(IEnumerable<byte[]> stateStack)
